@@ -1,21 +1,66 @@
+import os
+import json
+import io
 import time
-import sys
+import hashlib
+import qrcode
+from kafka import KafkaConsumer, KafkaProducer
+import redis
 
-def process_background_queue():
-    print("[INFO] Worker Service initialized successfully. Monitoring task pipelines...")
-    
-    # Simulating a basic worker event polling loop
-    try:
-        while True:
-            # In production, this block polls Redis or a Message Broker (RabbitMQ/Kafka)
-            print("[POLL] Checking Cache (REDIS) queue for pending QR batch requests...")
-            
-            # Simulating idle monitoring state
-            time.sleep(10) 
-            
-    except KeyboardInterrupt:
-        print("\n[SHUTDOWN] Gracefully terminating worker thread allocation safely.")
-        sys.exit(0)
+r = redis.Redis(
+    host=os.getenv("REDIS_HOST", "redis"),
+    port=6379,
+    db=0,
+    decode_responses=False
+)
 
-if __name__ == '__main__':
-    process_background_queue()
+producer = KafkaProducer(
+    bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+    value_serializer=lambda v: json.dumps(v).encode()
+)
+
+consumer = KafkaConsumer(
+    "qr-generation",
+    bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+    group_id="qr-workers",
+    value_deserializer=lambda m: json.loads(m.decode()),
+    auto_offset_reset="earliest"
+)
+
+print("[INFO] Worker Service initialized. Waiting for batch tasks...")
+
+for msg in consumer:
+    task = msg.value
+    print(f"[WORK] Processing task {task.get('task_id')} from batch {task.get('batch_id')}")
+
+    qr_text = task.get("text", "https://ciyuar.com")
+    foreground = task.get("fill_color", "#000000")
+    background = task.get("back_color", "#ffffff")
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(qr_text)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color=foreground, back_color=background)
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, "PNG")
+
+    raw = f"{qr_text}:{foreground}:{background}"
+    cache_key = hashlib.sha256(raw.encode()).hexdigest()
+    r.setex(cache_key, 604800, img_buffer.getvalue())
+
+    producer.send("qr-history", {
+        "user_id": task.get("user_id", "anonymous"),
+        "text": qr_text,
+        "fill_color": foreground,
+        "back_color": background,
+        "image_url": "",
+        "format": "png",
+        "timestamp": time.time()
+    })
+
+    print(f"[DONE] Task {task.get('task_id')} complete")
