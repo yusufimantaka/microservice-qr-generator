@@ -15,16 +15,23 @@ export default function QRExport({ text, foreground, background }: QRExportProps
     if (!text.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/qr/generate", {
+      // FIX 1: Base URL disamakan hanya sampai port host saja
+      const apiBaseUrl = process.env.NEXT_PUBLIC_QR_API_URL || "http://localhost:5000";
+      
+      // Menggabungkan base URL dengan endpoint terbaru milik Yusuf
+      const res = await fetch(`${apiBaseUrl}/api/v1/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: text.trim(),
-          fill_color: foreground,
-          back_color: background,
-          user_id: "anonymous",
+          fill_color: foreground, // FIX 2: Key disesuaikan dengan data.get('fill_color') di Python Yusuf
+          back_color: background,  // FIX 2: Key disesuaikan dengan data.get('back_color') di Python Yusuf
+          user_id: "anonymous",    // Tambahan data opsional untuk pipeline Kafka history milik Yusuf
         }),
       });
+
+      if (!res.ok) throw new Error("Backend service failed to generate QR asset");
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

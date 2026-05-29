@@ -1,4 +1,5 @@
 from flask import Flask, request, send_file
+from flask_cors import CORS
 import qrcode
 import io
 import os
@@ -9,6 +10,7 @@ from kafka import KafkaProducer
 import redis
 
 app = Flask(__name__)
+CORS(app)
 
 r = redis.Redis(
     host=os.getenv("REDIS_HOST", "redis"),

@@ -24,7 +24,10 @@ export default function HistoryList() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/history?user_id=anonymous&page=${page}&limit=20`)
+    // Add the cache options here to bypass Next.js internal network caching
+    fetch(`/api/history?user_id=anonymous&page=${page}&limit=20`, {
+      cache: "no-store",
+    })
       .then((r) => r.json())
       .then((json) => {
         setData(json);
